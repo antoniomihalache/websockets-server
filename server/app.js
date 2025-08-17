@@ -7,6 +7,13 @@ import fs from 'fs';
 const serverKey = fs.readFileSync('./certs/create-cert-key.pem');
 const serverCert = fs.readFileSync('./certs/create-cert.pem');
 
+// tasks
+const GET_INFO = 1;
+const GET_LENGTH = 2;
+const GET_MASK_KEY = 3;
+const GET_PAYLOAD = 4;
+const SEND_ECHO = 5;
+
 // create HTTP web-server object
 const httpsServer = https.createServer({ key: serverKey, cert: serverCert }, (req, res) => {
     res.writeHead(200);
@@ -52,4 +59,78 @@ function upgradeConnection(req, socket, head) {
     startWebSocketConnection(socket);
 }
 
-function startWebSocketConnection(socket) {}
+function startWebSocketConnection(socket) {
+    console.log(`Websocket connection established with client port: ${socket.remotePort}`);
+
+    // create a receiver object
+    const receiver = new WebSocketReceiver(socket);
+    console.log('RECEIVER: ', receiver);
+
+    // listen for data event
+    socket.on('data', (chunk) => {
+        receiver.processBuffer(chunk);
+    });
+
+    socket.on('end', () => {
+        console.log(`There will be no more data. The WS connection is closed.`);
+    });
+}
+
+class WebSocketReceiver {
+    #socket;
+    #buffersArray = []; // array containing the chunks of data received
+    #bufferedBytesLength = 0;
+    #taskLoop = false;
+    #task = GET_INFO;
+    #fin = false;
+    #optcode = null; //type of received data
+    #masked = false;
+    #initialPayloadSizeIndicator = 0;
+
+    constructor(socket) {
+        this.#socket = socket;
+    }
+
+    processBuffer(chunk) {
+        this.#buffersArray.push(chunk);
+        this.#bufferedBytesLength += chunk.length;
+        this.#startTaskLoop();
+    }
+
+    #startTaskLoop() {
+        this.#taskLoop = true;
+
+        do {
+            switch (this.#task) {
+                case GET_INFO:
+                    this.#getInfo();
+                    break;
+            }
+        } while (this.#taskLoop);
+    }
+
+    #getInfo() {
+        const infoBuffer = this.#consumeHeaders(CONSTANTS.MIN_FRAME_SIZE);
+        const firstByte = infoBuffer[0];
+        const secondByte = infoBuffer[1];
+
+        // extract WS payload information
+        this.#fin = (firstByte & 0b10000000) = 0b10000000; // check if the FIN bit is set
+    }
+
+    #consumeHeaders(n) {
+        this.#bufferedBytesLength -= n; // the goal is get to 0 - consume all buffered bytes
+        // if the size of the actual buffer = n, return the entire buffer
+        if (this.#buffersArray[0].length === n) {
+            return this.#buffersArray.shift();
+        }
+
+        if (n < this.#buffersArray[0].length) {
+            const infoBuffer = this.#buffersArray[0];
+            this.#buffersArray[0] = this.#buffersArray[0].slice(n);
+            return infoBuffer.slice(0, n);
+        } else {
+            throw Error('You cannot extract more data from a ws frame than the actual frame size.');
+        }
+    }
+}
