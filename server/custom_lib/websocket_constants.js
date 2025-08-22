@@ -15,7 +15,13 @@ const CONSTANTS = {
     LARGE_DATA_FLAG: 127,
     MEDIUM_SIZE_CONSPUTION: 2,
     LARGE_SIZE_CONSPUTION: 8,
-    MASK_LENGTH: 4
+    MASK_LENGTH: 4,
+    // Websocket opcodes
+    OPCODE_TEXT: 0x1,
+    OPCODE_BINARY: 0x2,
+    OPCODE_CLOSE: 0x8,
+    OPCODE_PING: 0x9,
+    OPCODE_PONG: 0xa
 };
 
 export default CONSTANTS;

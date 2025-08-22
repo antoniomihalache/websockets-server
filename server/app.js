@@ -83,7 +83,7 @@ class WebSocketReceiver {
     #taskLoop = false;
     #task = GET_INFO;
     #fin = false;
-    #optcode = null; //type of received data
+    #opcode = null; //type of received data
     #masked = false;
     #initialPayloadSizeIndicator = 0;
     #framePayloadLength = 0; // length of one WebSocket frame payload
@@ -125,13 +125,18 @@ class WebSocketReceiver {
     }
 
     #getInfo() {
+        // check wheter we have enough bytes in our internal buffer
+        if (this.#bufferedBytesLength < CONSTANTS.MIN_FRAME_SIZE) {
+            this.#taskLoop = false; // wait for more chunks via the 'data' event on the socket
+            return;
+        }
         const infoBuffer = this.#consumeHeaders(CONSTANTS.MIN_FRAME_SIZE);
         const firstByte = infoBuffer[0];
         const secondByte = infoBuffer[1];
 
         // extract WS payload information
         this.#fin = (firstByte & 0b10000000) === 0b10000000; // check if the FIN bit is set
-        this.#optcode = firstByte & 0b00001111; // extract the opcode
+        this.#opcode = firstByte & 0b00001111; // extract the opcode
         this.#masked = (secondByte & 0b10000000) === 0b10000000; // check if the MASK bit is set
         this.#initialPayloadSizeIndicator = secondByte & 0b01111111; // extract the payload size indicator
 
@@ -204,19 +209,32 @@ class WebSocketReceiver {
         // full frame received
         this.#framesReceived++;
         // consume the entire frame payload
-        let fullMaskedPayloadBuffer = this.#consumePayload(this.#framePayloadLength);
+        let frameMaskedPayloadBuffer = this.#consumePayload(this.#framePayloadLength);
 
         // unmask the data frame
-        let fullUnmaskedPayloadBuffer = METHODS.unmask(fullMaskedPayloadBuffer, this.#mask);
+        let frameUnmaskedPayloadBuffer = METHODS.unmask(frameMaskedPayloadBuffer, this.#mask);
 
-        if (fullUnmaskedPayloadBuffer.length) {
-            this.#fragments.push(fullUnmaskedPayloadBuffer);
+        // close frame
+        if (this.#opcode === CONSTANTS.OPCODE_CLOSE) {
+            throw new Error('Close frame received - not implemented yet');
+        }
+
+        // other frame types
+        if ([CONSTANTS.OPCODE_BINARY, CONSTANTS.OPCODE_PING, CONSTANTS.OPCODE_PONG].includes(this.#opcode)) {
+            // later I want to define a closure function
+            throw new Error('Server has not dealt with a this type of frame ... yet');
+        }
+
+        if (frameUnmaskedPayloadBuffer.length) {
+            this.#fragments.push(frameUnmaskedPayloadBuffer);
         }
 
         //check if more frames are expected
         if (!this.#fin) {
             this.#task = GET_INFO;
         } else {
+            console.log(`TOTAL FRAMES RECEIVED: ${this.#framesReceived}`);
+            console.log(`TOTAL PAYLOAD LENGTH: ${this.#totalPayloadLength}`);
             this.#task = SEND_ECHO;
         }
     }
