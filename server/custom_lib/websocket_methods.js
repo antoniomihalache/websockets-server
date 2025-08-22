@@ -45,8 +45,16 @@ function generateServerKey(clientKey) {
     return hash.digest('base64');
 }
 
+function unmask(payloadBuffer, maskKey) {
+    for (let i = 0; i < payloadBuffer.length; i++) {
+        payloadBuffer[i] = payloadBuffer[i] ^ maskKey[i % CONSTANTS.MASK_LENGTH];
+    }
+    return payloadBuffer;
+}
+
 export default {
     isOriginAllowed,
     check,
-    createUpgradeHeaders
+    createUpgradeHeaders,
+    unmask
 };
