@@ -11,6 +11,8 @@ const CONSTANTS = {
     // Websocket rules
     MIN_FRAME_SIZE: 2,
     // websocket payload related constants
+    SMALL_DATA_SIZE: 125,
+    MEDIUM_DATA_SIZE: 65535,
     MEDIUM_DATA_FLAG: 126,
     LARGE_DATA_FLAG: 127,
     MEDIUM_SIZE_CONSPUTION: 2,

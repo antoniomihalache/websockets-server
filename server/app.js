@@ -265,5 +265,67 @@ class WebSocketReceiver {
         return payloadBuffer;
     }
 
-    #sendEcho() {}
+    #sendEcho() {
+        // extract entire message (could be multiple frames) and create one buffer
+        const fullMessage = Buffer.concat(this.#fragments);
+        // extract payload length
+        let payloadLength = fullMessage.length;
+        let additionalPayloadSizeIndicator = null;
+        switch (true) {
+            case payloadLength <= CONSTANTS.SMALL_DATA_SIZE:
+                additionalPayloadSizeIndicator = 0;
+                break;
+            case payloadLength > CONSTANTS.SMALL_DATA_SIZE && payloadLength <= CONSTANTS.MEDIUM_DATA_SIZE:
+                additionalPayloadSizeIndicator = CONSTANTS.MEDIUM_SIZE_CONSPUTION;
+                break;
+            default:
+                additionalPayloadSizeIndicator = CONSTANTS.LARGE_SIZE_CONSPUTION;
+        }
+
+        const frame = Buffer.alloc(CONSTANTS.MIN_FRAME_SIZE + additionalPayloadSizeIndicator + payloadLength);
+        let fin = 0x1;
+        let rsv1 = 0x0;
+        let rsv2 = 0x0;
+        let rsv3 = 0x0;
+        let opcode = CONSTANTS.OPCODE_BINARY;
+        let firstByte = (fin << 7) | (rsv1 << 6) | (rsv2 << 5) | (rsv3 << 4) | opcode;
+        // first byte
+        frame[0] = firstByte; // fin, rsv + optcode
+        // populate frame with payload length
+        // set masking bit to 0 - server to client frames are not masked
+        let maskingBit = 0x0;
+        if (payloadLength <= CONSTANTS.SMALL_DATA_SIZE) {
+            frame[1] = maskingBit | payloadLength;
+        } else if (payloadLength <= CONSTANTS.MEDIUM_DATA_SIZE) {
+            frame[1] = maskingBit | CONSTANTS.MEDIUM_DATA_FLAG;
+            frame.writeUInt16BE(payloadLength, CONSTANTS.MIN_FRAME_SIZE);
+        } else {
+            frame[1] = maskingBit | CONSTANTS.LARGE_DATA_FLAG;
+            frame.writeUInt64BE(payloadLength, CONSTANTS.MIN_FRAME_SIZE);
+        }
+
+        // write the payload data
+        const messageStartOffset = CONSTANTS.MIN_FRAME_SIZE + additionalPayloadSizeIndicator;
+        fullMessage.copy(frame, messageStartOffset);
+
+        this.#socket.write(frame);
+        this.#reset();
+    }
+
+    #reset() {
+        this.#buffersArray = [];
+        this.#bufferedBytesLength = 0;
+        this.#taskLoop = false;
+        this.#task = GET_INFO;
+        this.#fin = false;
+        this.#opcode = null;
+        this.#masked = false;
+        this.#initialPayloadSizeIndicator = 0;
+        this.#framePayloadLength = 0;
+        this.#maxPayload = 1024 * 1024;
+        this.#totalPayloadLength = 0;
+        this.#mask = Buffer.alloc(CONSTANTS.MASK_LENGTH);
+        this.#framesReceived = 0;
+        this.#fragments = [];
+    }
 }

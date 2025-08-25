@@ -70,8 +70,17 @@
                 };
 
                 // MESSAGE EVENT: handle messages when they are received from server
-                socket.onmessage = function (message) {
-                    //
+                socket.onmessage = function (messageEvent) {
+                    if (messageEvent.data instanceof Blob) {
+                        let reader = new FileReader();
+                        reader.readAsText(messageEvent.data);
+                        reader.onload = function () {
+                            console.log('Message received from server: ', reader.result);
+                            table.innerHTML += '<li class="received"><span>RECEIVED:</span>' + reader.result + '</li>';
+                        };
+                    } else {
+                        console.log('Received non-Blob data: ', messageEvent.data);
+                    }
                 };
 
                 // CLOSE EVENT
