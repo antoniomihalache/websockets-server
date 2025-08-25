@@ -120,6 +120,9 @@ class WebSocketReceiver {
                 case GET_PAYLOAD:
                     this.#getPayload();
                     break;
+                case SEND_ECHO:
+                    this.#sendEcho();
+                    break;
             }
         } while (this.#taskLoop);
     }
@@ -261,4 +264,6 @@ class WebSocketReceiver {
 
         return payloadBuffer;
     }
+
+    #sendEcho() {}
 }
