@@ -12,6 +12,7 @@
             <h1>WebSockets Echo Demo</h1>
             <button type="submit" id="open_ws">Open WS</button>
             <div id="status">Status: Not connected</div>
+            <div id="server_response"></div>
             <!-- message table -->
             <ul id="table"></ul>
             <!-- form -->
@@ -34,6 +35,7 @@
             let table = document.getElementsByTagName('ul')[0];
             let message = document.getElementById('message');
             let populate_btn = document.getElementById('populate');
+            let serverResponse = document.getElementById('server_response');
 
             // *** WEBSOCKET SERVER ***
             open_ws_btn.addEventListener('click', () => {
@@ -55,6 +57,7 @@
                     console.log('SOCKET CONNECTING STATUS IS: ' + socket.readyState);
                     // reset table values
                     table.innerHTML = '';
+                    serverResponse.innerHTML = '';
                     // provide client-side feedback
                     console.log('SOCKET CONNECTING STATUS IS: ' + socket.readyState);
                     socketStatus.innerHTML = `Connected to: ${openEvent.currentTarget.url}`;
@@ -91,15 +94,35 @@
                     table.innerHTML = '';
 
                     switch (closeEventObject.code) {
-                        case 1006: // network problem (e.g. your websocket server is not running)
-                            socketStatus.innerHTML = 'Something is wrong with your WS newtork connection';
-                            break;
                         case 1001: // if a peer (client or server) closes the connection immediately
                             socketStatus.innerHTML = `Disconnected reason: ${closeEventObject.reason}`;
                             table.innerHTML = '';
                             break;
+                        case 1002:
+                            socketStatus.innerHTML = `Protocol error: ${closeEventObject.reason}`;
+                            table.innerHTML = '';
+                            break;
+                        case 1003:
+                            socketStatus.innerHTML = `Unsupported data type.`;
+                            table.innerHTML = '';
+                            break;
+                        case 1006: // network problem (e.g. your websocket server is not running)
+                            socketStatus.innerHTML = 'Something is wrong with your WS newtork connection';
+                            break;
+                        case 1008:
+                            socketStatus.innerHTML = `You violated server policy`;
+                            serverResponse.innerHTML = `The server responded: ${closeEventObject.reason}`;
+                            table.innerHTML = '';
+                            break;
+                        case 1009:
+                            socketStatus.innerHTML = 'Message too big for me to handle. Max allowed is 1 MiB';
+                            serverResponse.innerHTML = `The server responded: ${closeEventObject.reason}`;
+                            table.innerHTML = '';
+                            break;
+
                         default: // when the client hits the close websocket button
                             socketStatus.innerHTML = `You disconnected by clicking the Close button.`;
+                            serverResponse.innerHTML = `The server responded: ${closeEventObject.reason}`;
                     }
 
                     // CSS: FORM REMOVAL

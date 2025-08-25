@@ -13,6 +13,7 @@ const GET_LENGTH = 2;
 const GET_MASK_KEY = 3;
 const GET_PAYLOAD = 4;
 const SEND_ECHO = 5;
+const GET_CLOSE_INFO = 6;
 
 // create HTTP web-server object
 const httpsServer = https.createServer({ key: serverKey, cert: serverCert }, (req, res) => {
@@ -123,6 +124,9 @@ class WebSocketReceiver {
                 case SEND_ECHO:
                     this.#sendEcho();
                     break;
+                case GET_CLOSE_INFO:
+                    this.#getCloseInfo();
+                    break;
             }
         } while (this.#taskLoop);
     }
@@ -145,8 +149,13 @@ class WebSocketReceiver {
 
         // if data is not masked, throw an error
         if (!this.#masked) {
-            //TODO: send a close frame back to the client
-            throw new Error('Mask is not set by the client. This is not allowed by the WebSocket protocol.');
+            this.#sendClose(1002, 'All data frames sent by the client must be masked.');
+        }
+
+        // Ping and Pong frames
+        if ([CONSTANTS.OPCODE_PING, CONSTANTS.OPCODE_PONG].includes(this.#opcode)) {
+            // send a close frame
+            this.#sendClose(1003, 'Ping and Pong frames are not supported by this server.');
         }
 
         this.#task = GET_LENGTH;
@@ -192,8 +201,7 @@ class WebSocketReceiver {
     #processLength() {
         this.#totalPayloadLength += this.#framePayloadLength;
         if (this.#totalPayloadLength > this.#maxPayload) {
-            //TODO: send a close frame back to the client
-            throw new Error(`Payload size ${this.#framePayloadLength} exceeds the maximum allowed ${this.#maxPayload}`);
+            this.#sendClose(1009, 'Message too big for me to handle. Max allowed is 1 MiB');
         }
         this.#task = GET_MASK_KEY;
     }
@@ -217,19 +225,18 @@ class WebSocketReceiver {
         // unmask the data frame
         let frameUnmaskedPayloadBuffer = METHODS.unmask(frameMaskedPayloadBuffer, this.#mask);
 
-        // close frame
-        if (this.#opcode === CONSTANTS.OPCODE_CLOSE) {
-            throw new Error('Close frame received - not implemented yet');
-        }
-
-        // other frame types
-        if ([CONSTANTS.OPCODE_BINARY, CONSTANTS.OPCODE_PING, CONSTANTS.OPCODE_PONG].includes(this.#opcode)) {
-            // later I want to define a closure function
-            throw new Error('Server has not dealt with a this type of frame ... yet');
-        }
-
         if (frameUnmaskedPayloadBuffer.length) {
             this.#fragments.push(frameUnmaskedPayloadBuffer);
+        }
+
+        // close frame
+        if (this.#opcode === CONSTANTS.OPCODE_CLOSE) {
+            this.#task = GET_CLOSE_INFO;
+            return;
+        }
+
+        if (this.#framePayloadLength <= 0) {
+            this.#sendClose(1008, 'The textarea can not be empty.');
         }
 
         //check if more frames are expected
@@ -327,5 +334,50 @@ class WebSocketReceiver {
         this.#mask = Buffer.alloc(CONSTANTS.MASK_LENGTH);
         this.#framesReceived = 0;
         this.#fragments = [];
+    }
+
+    #getCloseInfo() {
+        let closeFramePayload = this.#fragments[0]; //control fragments cannot be fragmented
+
+        if (!closeFramePayload) {
+            this.#sendClose(1008, 'Next time, please set the status code');
+            return;
+        }
+
+        // extract close code from the first 2 bytes of the payload
+        const closeCode = closeFramePayload.readUInt16BE(0);
+        if (closeCode === 1001) {
+            this.#socket.end();
+            this.#reset();
+            return;
+        }
+        let closeReason = closeFramePayload.toString('utf8', 2);
+        console.log(`Received close frame: ${closeCode} - ${closeReason}`);
+        let serverResponse = `Sorry to see you go. Please open up a new connection.`;
+        this.#sendClose(closeCode, serverResponse);
+    }
+
+    #sendClose(statusCode, reason) {
+        let closureCode = typeof statusCode !== undefined && statusCode ? statusCode : 1000;
+        let closureReason = typeof reason !== undefined && reason ? reason : '';
+
+        // get the length of the binary representation of the close reason
+        let closureReasonBuffer = Buffer.from(closureReason, 'utf-8');
+        const closureReasonLength = closureReasonBuffer.length;
+
+        // construct close frame payload
+        const closeFramePayload = Buffer.alloc(2 + closureReasonLength);
+        closeFramePayload.writeUInt16BE(closureCode, 0); // closure status code
+        closureReasonBuffer.copy(closeFramePayload, 2); // closure reason
+
+        const firstByte = 0b10000000 | 0b00000000 | 0b00001000; // FIN(1) + RSV1-3(0) + OPCODE_CLOSE(8)
+        const secondByte = 0b00000000 | closeFramePayload.length; // MASK(0) + payload length
+        const mandatoryCloseHeader = Buffer.from([firstByte, secondByte]);
+
+        const closeFrame = Buffer.concat([mandatoryCloseHeader, closeFramePayload]);
+        this.#socket.write(closeFrame);
+        this.#socket.end();
+
+        this.#reset();
     }
 }
